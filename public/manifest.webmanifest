@@ -1,0 +1,12 @@
+{
+  "name": "MOW Fanpage",
+  "short_name": "MOW Fanpage",
+  "description": "Materiały do publikacji na fanpage MOW nr 1 w Malborku",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f6fa",
+  "theme_color": "#17345b",
+  "icons": [
+    {"src":"/icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
