@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-const url=import.meta.env.VITE_SUPABASE_URL;
-const key=import.meta.env.VITE_SUPABASE_ANON_KEY;
-if(!url||!key) console.warn('Brak konfiguracji Supabase. Uzupełnij .env.');
-export const supabase=createClient(url||'https://example.supabase.co',key||'demo',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+const url=import.meta.env.VITE_SUPABASE_URL || 'https://tuxtnlqtakhtvdesbmow.supabase.co';
+const key=import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_d2cI7gwgLZE2OCzw8wr82Q_Zh0pDBqf';
+export const supabase=createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
