@@ -1,73 +1,68 @@
 # MOW Fanpage
 
-Mobilna aplikacja PWA do bezpiecznego przekazywania materiałów na oficjalny fanpage Młodzieżowego Ośrodka Wychowawczego nr 1 im. Tadeusza Kościuszki w Malborku.
+Samodzielna PWA do przekazywania materiałów z MOW do ręcznej publikacji na Facebooku. Odzyskana lokalnie 7 września 2026 z repozytorium `JarekDymek/MOW-Fanpage` (punkt wyjścia `e271fd514fa0ca679a8669e8711501a561b478da`) i rozmowy „Przygotuj formularz MOW”. Wydanie 1.0.0 przygotowane 8 września 2026 na wyraźne zlecenie publikacji.
 
-## Co potrafi
+## Role i przebieg
 
-- instalacja jako PWA na Androidzie/iOS,
-- logowanie pracowników,
-- role `employee` i `moderator`,
-- formularz materiału: opis + maks. 15 zdjęć,
-- kompresja zdjęć w przeglądarce i ponowne kodowanie JPEG (usuwa typowe metadane EXIF/GPS z przesyłanej kopii),
-- prywatny magazyn zdjęć w Supabase Storage,
-- status wizerunku/zgód i wymagane oświadczenia,
-- wybór: zachować tekst autora albo przekazać do redakcji,
-- moderator może przygotować wersję redakcyjną i przesłać ją autorowi do akceptacji,
-- autor może zaakceptować wersję albo poprosić o poprawkę,
-- historia wersji i akceptacji,
-- moderator oznacza publikację i zapisuje link do posta,
-- przygotowana infrastruktura Web Push / Edge Function do powiadomień.
+1. Wychowawca otwiera `/wychowawca/`, loguje się linkiem e-mail i uzupełnia profil: imię i nazwisko, funkcja, miejsce pracy, opcjonalna grupa. Moderator jest nadawany po stronie bazy.
+2. Dodaje tekst, 1–15 zdjęć, wybiera oryginał lub redakcję z akceptacją, określa status wizerunku i zaznacza pięć potwierdzeń. Zdjęcia są przetwarzane do JPEG przed wysłaniem.
+3. Moderator korzysta z `/admin/`. Kopiuje tekst do ręcznej redakcji w ChatGPT, wkleja wersję i wysyła autorowi do akceptacji. Aplikacja nie wymaga OpenAI API ani klucza AI.
+4. Po akceptacji moderator ogląda orientacyjny podgląd, kopiuje tekst i udostępnia zdjęcia. Dostępne są również zbiorcze pobieranie oraz osobne linki do zdjęć. Podział udostępniania na partie po 10 jest wyborem aplikacji, nie uniwersalnym limitem systemowym.
+5. Moderator publikuje ręcznie na Facebooku, następnie wkleja adres konkretnego posta. Status „Proszę o weryfikację” blokuje te czynności w interfejsie; backend także blokuje publikację. Moderator może zapisać weryfikację po rzeczywistym sprawdzeniu dokumentacji placówki.
 
-## Statusy
-
-- `draft` – szkic,
-- `submitted` – nowe zgłoszenie,
-- `editing` – w redakcji,
-- `awaiting_author` – czeka na autora,
-- `changes_requested` – autor poprosił o zmianę,
-- `approved` – zaakceptowane do publikacji,
-- `published` – opublikowane,
-- `rejected` – wstrzymane.
+Wychowawca ma instrukcję na ekranie startowym, rozwijane wyjaśnienia i pomoc `P`; `Esc` zamyka pomoc. Pisanie litery P w polach nie otwiera pomocy.
 
 ## Uruchomienie lokalne
 
-```bash
-npm install
-cp .env.example .env
-npm run dev
+Wymagany Node.js 22.12+ lub 24. Na Windows używaj `npm.cmd`, jeśli PowerShell blokuje `npm.ps1`.
+
+```powershell
+npm.cmd ci
+npm.cmd run dev
 ```
 
-Uzupełnij `.env`:
+Serwer nasłuchuje tylko na `127.0.0.1`. Wejścia: `/wychowawca/` i `/admin/`.
 
-```env
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
-VITE_VAPID_PUBLIC_KEY=YOUR_VAPID_PUBLIC_KEY
+```powershell
+npm.cmd run build
+npm.cmd test
+npm.cmd run preview -- --port 4173
 ```
 
-## Supabase
+W drugim terminalu, przy działającym podglądzie:
 
-1. Utwórz projekt Supabase.
-2. W SQL Editor uruchom `supabase/migrations/001_init.sql`.
-3. Utwórz pierwsze konto moderatora w Authentication.
-4. W tabeli `profiles` ustaw temu użytkownikowi `role = 'moderator'`.
-5. Bucket `mow-materials` jest tworzony przez migrację jako prywatny.
-6. Skonfiguruj Edge Function `notify-workflow` i zmienne Web Push, jeśli chcesz powiadomienia push.
-
-### Bezpieczeństwo
-
-RLS ogranicza pracowników do własnych zgłoszeń. Moderator ma dostęp do całego procesu redakcyjnego. Zdjęcia nie są publiczne; aplikacja generuje czasowe signed URL wyłącznie dla uprawnionego użytkownika.
-
-## Deploy
-
-Frontend jest przygotowany pod Vercel:
-
-```bash
-npm run build
+```powershell
+npm.cmd run test:ui
 ```
 
-Po podłączeniu repo do Vercel ustaw zmienne `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` oraz opcjonalnie `VITE_VAPID_PUBLIC_KEY`.
+Testy UI wymagają Microsoft Edge. Tworzą osobne konteksty przeglądarki z fikcyjnymi danymi i przechwytują wszystkie połączenia do Supabase. Nie wysyłają prawdziwych wiadomości, zdjęć ani postów. Wyniki i zrzuty trafiają do ignorowanego `output/playwright/`. Nie są to testy produkcyjnego RLS ani systemowego panelu udostępniania Androida.
 
-## Ważne organizacyjnie
+## Konfiguracja i usługi
 
-Kod nie zastępuje procedur MOW dotyczących zgód na wizerunek, retencji zdjęć ani decyzji Administratora/IOD. System wymusza i dokumentuje określony obieg materiału.
+- Vercel: projekt `mow-fanpage`, ID `prj_FnkC2kabjoROHOwkhy9DHRf2XVyj`, team `team_SprDI3LslqFPjAPin5ITGEYG`. Produkcja: <https://mow-fanpage.vercel.app>. Hosting pozostaje bez zmian.
+- Supabase: `tuxtnlqtakhtvdesbmow`. Projekt współdzielony z innymi aplikacjami; MOW korzysta z tabel/RPC `mow_*` i magazynu `mow-materials`. Nie zmieniaj globalnego Site URL ani wspólnych ustawień SMTP bez osobnego uzgodnienia.
+- Frontend: opcjonalne `VITE_SUPABASE_URL` i `VITE_SUPABASE_PUBLISHABLE_KEY` (alternatywnie `VITE_SUPABASE_ANON_KEY`). Bez nich kod zachowuje dotychczasowy publiczny adres i klucz publishable. Zwykłe uruchomienie aplikacji łączy się z produkcyjnym Supabase; wyłącznie testy UI przechwytują te połączenia.
+- Historyczna funkcja serwerowa używała `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`; opcjonalnie `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Sekretów nie odzyskano ani nie zapisano. Nie umieszczaj klucza service role w zmiennych `VITE_*`.
+- Magic link powinien wracać na odpowiedni adres `/admin/` lub `/wychowawca/`. Historyczne ustawienia redirectów i Gmail SMTP nie zostały ponownie zweryfikowane.
+
+## Backend i sprawdzenie obiegu
+
+Odzyskano cztery rzeczywiste migracje MOW i wdrożoną funkcję `mow-notify-workflow`. Przestarzałe pliki pozostają w `supabase/archive/` jako referencje, których nie wolno wdrażać. Migracja `20260908073639_mow_workflow_integrity.sql` ogranicza granty, blokuje akceptację starej wersji i oznaczenie niegotowego materiału jako opublikowanego, ujednolica limit profilu.
+
+8 września sprawdzono RLS sześciu tabel i prywatny bucket. Test transakcyjny na danych syntetycznych w rzeczywistej bazie przeszedł: izolacja autora/zdjęć, wysłanie, dwie redakcje, odrzucenie starej akceptacji, blokada wizerunku i zapis prawidłowego adresu posta. Transakcję wycofano, bez zachowania testowych kont lub materiałów. Nie modyfikowano istniejących materiałów ani wspólnej konfiguracji Auth.
+
+Funkcja powiadomień zapisuje komunikaty wewnątrz aplikacji; nie wysyła Web Push ani e-maili. Magic link zależy od istniejącej konfiguracji Auth/SMTP; dostarczenia prawdziwego e-maila nie testowano. Testy przeglądarkowe używają atrap odpowiedzi, nie autentycznych sesji pracowników. Formularz zgody wymaga uzupełnienia adresu fanpage’a, dat, retencji i informacji o transferach przez placówkę.
+
+## Naprawy w wydaniu
+
+- Jeden kod aplikacji w `src/app.js`, budowany z przypiętymi zależnościami i lockfile. Usunięto zależność startu od GitHub/CDN; odzyskano CSS i manifesty obu wejść. Ekran startu i błąd importu mają czytelny komunikat.
+- Wywołania profilu odbywają się poza callbackiem blokady Auth. Odświeżenie tokenu tego samego użytkownika nie przebudowuje wypełnianego formularza.
+- Zbiorcze generowanie linków zdjęć zastępuje do 15 osobnych żądań. Błąd odczytu fotografii jest widoczny zamiast cichego pominięcia pliku.
+- Pobieranie zdjęć działa niezależnie od Web Share. API może odmówić z powodu polityki, aktywacji użytkownika lub decyzji systemu; liczba zdjęć nie jest jedyną możliwą przyczyną ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share)).
+- Wysyłanie blokuje podwójne kliknięcie i pozwala wznowić potwierdzony częściowy zapis w tym samym formularzu. Nie zamykaj strony podczas wysyłania; odzyskanie szkicu po restarcie oraz rozstrzyganie niepewnego zapisu po utracie odpowiedzi pozostają dalszym usprawnieniem.
+- Nowy service worker nie buforuje prywatnych odpowiedzi API ani fotografii. Czyści wyłącznie dawne cache `mow-fanpage-vN`; zachowuje localStorage i IndexedDB. Bez internetu wyświetla informację o połączeniu.
+- Vite 7.3.6 usuwa podatności wykryte w odzyskanej wersji 7.1.7. Testy bezpieczeństwa kontrolują izolację cache i adresy publikacji.
+
+## Zasady pracy
+
+`AGENTS.md` zawiera pełny tryb ECO i ochronę danych dla wszystkich plików repozytorium. Publikacja, push i merge wymagają wyraźnego osobnego zlecenia. Historia rozmowy pozostaje w prywatnym katalogu roboczym poza repozytorium.

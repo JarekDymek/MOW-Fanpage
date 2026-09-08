@@ -1,0 +1,12 @@
+revoke all on function public.mow_create_profile(text,text) from public, anon;
+revoke all on function public.mow_submit_submission(uuid) from public, anon;
+revoke all on function public.mow_create_revision_and_send(uuid,text) from public, anon;
+revoke all on function public.mow_respond_to_revision(uuid,boolean,text) from public, anon;
+revoke all on function public.mow_mark_published(uuid,text) from public, anon;
+revoke all on function public.mow_is_moderator() from public, anon;
+grant execute on function public.mow_create_profile(text,text) to authenticated;
+grant execute on function public.mow_submit_submission(uuid) to authenticated;
+grant execute on function public.mow_create_revision_and_send(uuid,text) to authenticated;
+grant execute on function public.mow_respond_to_revision(uuid,boolean,text) to authenticated;
+grant execute on function public.mow_mark_published(uuid,text) to authenticated;
+grant execute on function public.mow_is_moderator() to authenticated;
