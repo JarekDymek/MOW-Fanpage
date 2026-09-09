@@ -1,6 +1,6 @@
 # MOW Fanpage
 
-Samodzielna PWA do przekazywania materiałów z MOW do ręcznej publikacji na Facebooku. Odzyskana lokalnie 7 września 2026 z repozytorium `JarekDymek/MOW-Fanpage` (punkt wyjścia `e271fd514fa0ca679a8669e8711501a561b478da`) i rozmowy „Przygotuj formularz MOW”. Wydanie 1.0.0 przygotowane 8 września 2026 na wyraźne zlecenie publikacji.
+Samodzielna PWA do przekazywania materiałów z MOW do ręcznej publikacji na Facebooku. Odzyskana lokalnie 7 września 2026 z repozytorium `JarekDymek/MOW-Fanpage` (punkt wyjścia `e271fd514fa0ca679a8669e8711501a561b478da`) i rozmowy „Przygotuj formularz MOW”. Wydanie 1.1.0 przygotowane 9 września 2026 na wyraźne zlecenie publikacji.
 
 ## Role i przebieg
 
@@ -59,10 +59,14 @@ Funkcja powiadomień zapisuje komunikaty wewnątrz aplikacji; nie wysyła Web Pu
 - Wywołania profilu odbywają się poza callbackiem blokady Auth. Odświeżenie tokenu tego samego użytkownika nie przebudowuje wypełnianego formularza.
 - Zbiorcze generowanie linków zdjęć zastępuje do 15 osobnych żądań. Błąd odczytu fotografii jest widoczny zamiast cichego pominięcia pliku.
 - Pobieranie zdjęć działa niezależnie od Web Share. API może odmówić z powodu polityki, aktywacji użytkownika lub decyzji systemu; liczba zdjęć nie jest jedyną możliwą przyczyną ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share)).
-- Wysyłanie blokuje podwójne kliknięcie i pozwala wznowić potwierdzony częściowy zapis w tym samym formularzu. Nie zamykaj strony podczas wysyłania; odzyskanie szkicu po restarcie oraz rozstrzyganie niepewnego zapisu po utracie odpowiedzi pozostają dalszym usprawnieniem.
+- Wysyłanie ma licznik zapisanych zdjęć, stan oczekiwania i osobny ekran sukcesu. Stały identyfikator z autora, treści i przetworzonych zdjęć oraz unikalne klucze bazy chronią przed powieleniem identycznego materiału, także po utracie odpowiedzi lub w dwóch kartach. Ponowienie sprawdza istniejący zapis i nie nadpisuje plików. Zmiana treści lub zdjęć oznacza nowy materiał; nie jest to semantyczne wykrywanie podobnych postów. Formularz po zamknięciu nie jest automatycznie odtwarzany: kopię tekstu należy zachować, ponowne wybranie identycznych danych umożliwia rozpoznanie zapisu. Starsze zgłoszenia z losowymi identyfikatorami nie są objęte tym rozpoznawaniem.
 - Nowy service worker nie buforuje prywatnych odpowiedzi API ani fotografii. Czyści wyłącznie dawne cache `mow-fanpage-vN`; zachowuje localStorage i IndexedDB. Bez internetu wyświetla informację o połączeniu.
 - Vite 7.3.6 usuwa podatności wykryte w odzyskanej wersji 7.1.7. Testy bezpieczeństwa kontrolują izolację cache i adresy publikacji.
 
 ## Zasady pracy
 
 `AGENTS.md` zawiera pełny tryb ECO i ochronę danych dla wszystkich plików repozytorium. Publikacja, push i merge wymagają wyraźnego osobnego zlecenia. Historia rozmowy pozostaje w prywatnym katalogu roboczym poza repozytorium.
+
+## Interfejs 1.1.0
+
+Pięć kroków z czerwonym oznaczeniem braków, tekstowym statusem i delikatnym podświetleniem następnego kroku. Nawigacja w górnym panelu i przyciski Dalej pod sekcjami. Duże, kontrastowe przyciski, responsywny układ oraz respektowanie prefers-reduced-motion. Pełna instrukcja startowa jest zwinięta; przycisk pomocy nie zasłania formularza. Limity przygotowania zdjęć: 15 plików, do 20 MiB każdy i 120 MiB łącznie; gotowe JPEG do 3 MiB. Żądania kończą oczekiwanie po 45 sekundach, bez automatycznej pętli wysyłania. Moderator nie otrzymuje na liście nieukończonych szkiców.

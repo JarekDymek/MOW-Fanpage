@@ -13,7 +13,7 @@ const png=Buffer.from(await fixturePage.evaluate(()=>{
 await fixturePage.close();
 const author='11111111-1111-4111-8111-111111111111',moderator='22222222-2222-4222-8222-222222222222';
 let submission={id:'33333333-3333-4333-8333-333333333333',author_id:author,title:'Próba formularza – dane fikcyjne',event_date:'2026-09-07',location:'Sala testowa',body_original:'Fikcyjny opis wydarzenia do testu.',editorial_mode:'edit_approval',consent_status:'verified',status:'submitted'};
-let revisions=[],photoCount=15,failUpload=false,failedOnce=false,insertCount=0,signCalls=0;
+let revisions=[],photoCount=15,failUpload=false,failedOnce=false,insertCount=0,signCalls=0,insertedPhotos=[];
 const calls=[];
 async function session(role,{mobile=false,signedIn=true}={}){
   const uid=role==='moderator'?moderator:author;
@@ -38,6 +38,7 @@ async function session(role,{mobile=false,signedIn=true}={}){
       return reply({signedURL:'/object/sign/mow-materials/test-photo.png?token=fake'});
     }
     if(path.includes('test-photo.png'))return route.fulfill({status:200,contentType:'image/png',body:png});
+    if(path.startsWith('/storage/v1/object/')&&method==='GET')return reply({message:'Not found',statusCode:'404'},404);
     if(path.startsWith('/storage/v1/object/')&&method==='POST'){
       if(failUpload&&!failedOnce){failedOnce=true;return reply({message:'Test przerwanego wysyłania',statusCode:'500',error:'test'},500)}
       return reply({Key:'test'});
@@ -45,11 +46,13 @@ async function session(role,{mobile=false,signedIn=true}={}){
     if(path.endsWith('/mow_profiles'))return reply({id:uid,full_name:role==='moderator'?'Moderator testowy':'Autor testowy',unit:'wychowawca · internat · grupa testowa',role});
     if(path.endsWith('/mow_submissions')){
       if(method==='PATCH'){submission={...submission,...req.postDataJSON()};return reply([{id:submission.id}]);}
-      if(method==='POST'){insertCount++;submission={...submission,...req.postDataJSON(),id:submission.id};return reply(submission,201)}
+      if(method==='POST'){insertCount++;submission={...submission,...req.postDataJSON()};insertedPhotos=[];return reply(submission,201)}
+      if(url.searchParams.get('id')&&url.searchParams.get('id')!=='eq.'+submission.id)return reply(null);
       return reply(req.headers().accept?.includes('vnd.pgrst.object')?submission:[submission]);
     }
     if(path.endsWith('/mow_submission_photos')){
-      if(method==='POST')return reply(null,201);
+      if(method==='POST'){insertedPhotos.push(req.postDataJSON());return reply(null,201);}
+      if(insertCount)return reply(insertedPhotos);
       return reply(Array.from({length:photoCount},(_,i)=>({submission_id:submission.id,order_index:i,storage_path:`${author}/${submission.id}/${i}.jpg`})));
     }
     if(path.endsWith('/mow_revisions'))return reply(revisions);
@@ -122,9 +125,19 @@ try{
   await mod.page.locator('#verifyConsent input').check();await mod.page.locator('#verifyConsent button').click();await mod.page.locator('#pub').waitFor();
   assert.equal(submission.consent_status,'verified');reports.push('Moderator zapisuje sprawdzenie wizerunku i odblokowuje gotowy materiał: PASS');
   await worker.page.goto(origin+'/wychowawca/');await worker.page.locator('#n').waitFor();
+  await worker.page.screenshot({path:'output/playwright/home-mobile.png',fullPage:true});
+  await worker.page.setViewportSize({width:320,height:800});
+  assert.equal(await worker.page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  assert.ok(await worker.page.locator('#n').evaluate(el=>el.getBoundingClientRect().height>=54));
+  await worker.page.setViewportSize({width:390,height:844});
   await worker.page.locator('#e').click();await worker.page.locator('#ep').waitFor();
   assert.equal(await worker.page.locator('[name=position]').inputValue(),'wychowawca');
   await worker.page.locator('[data-new]').click();await worker.page.locator('#f').waitFor();
+  await worker.page.locator('.primary.big').click();assert.equal(insertCount,0);assert.equal(await worker.page.locator('[data-step="0"]').getAttribute('aria-current'),'step');
+  await worker.page.locator('#nextStep').click();assert.equal(await worker.page.locator('[name=title]').evaluate(el=>el===document.activeElement),true);
+  await worker.page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await worker.page.locator('[data-step="0"]').evaluate(el=>getComputedStyle(el).animationName),'none');
+  await worker.page.emulateMedia({reducedMotion:'no-preference'});
   await worker.page.locator('[name=title]').fill('Nowy test');await worker.page.locator('[name=event_date]').fill('2026-09-07');
   await worker.page.locator('[name=location]').fill('Sala testowa');await worker.page.locator('[name=body_original]').fill('Tekst testowy');
   await worker.page.locator('[value=verified]').check();for(let i=0;i<5;i++)await worker.page.locator(`[name=c${i}]`).check();
@@ -132,8 +145,9 @@ try{
   await worker.page.getByText('Gotowe: 1/15',{exact:true}).waitFor();
   await worker.page.evaluate(()=>scrollTo(0,0));await worker.page.screenshot({path:'output/playwright/worker-mobile.png',fullPage:true});
   failUpload=true;photoCount=1;
-  await worker.page.locator('.primary.big').click();await worker.page.getByText(/Wysyłanie przerwane/).waitFor();
+  await worker.page.locator('.primary.big').click();await worker.page.locator('#f').evaluate(f=>f.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));await worker.page.getByText(/Wysyłanie przerwane/).waitFor();
   await worker.page.locator('.primary.big').click();await worker.page.waitForURL('**/?submission=*');
+  await worker.page.getByRole('heading',{name:'Wysłano do moderatora'}).waitFor();await worker.page.screenshot({path:'output/playwright/sent-mobile.png',fullPage:true});assert.equal(await worker.page.locator('#f').count(),0);
   await worker.page.locator('h1').waitFor();assert.equal(insertCount,1);assert.equal(submission.status,'submitted');
   reports.push('Przetworzenie PNG, błąd wysyłki i wznowienie bez drugiego zgłoszenia: PASS');
   assert.equal((await worker.page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)),false);

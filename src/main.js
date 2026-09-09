@@ -1,4 +1,5 @@
 import './styles.css';
+import './accessible.css';
 const admin=location.pathname.startsWith('/admin');
 document.querySelector('link[rel="manifest"]').href=admin?'/admin.webmanifest':'/wychowawca.webmanifest';
 document.title=admin?'MOW Fanpage – Admin':'MOW Fanpage – Wychowawca';
