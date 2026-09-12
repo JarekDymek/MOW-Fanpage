@@ -133,10 +133,10 @@ try{
   await worker.page.locator('#e').click();await worker.page.locator('#ep').waitFor();
   assert.equal(await worker.page.locator('[name=position]').inputValue(),'wychowawca');
   await worker.page.locator('[data-new]').click();await worker.page.locator('#f').waitFor();
-  await worker.page.locator('.primary.big').click();assert.equal(insertCount,0);assert.equal(await worker.page.locator('[data-step="0"]').getAttribute('aria-current'),'step');
+  await worker.page.locator('.primary.big').click();assert.equal(insertCount,0);assert.equal(await worker.page.locator('[data-step="1"]').getAttribute('aria-current'),'step');
   await worker.page.locator('#nextStep').click();assert.equal(await worker.page.locator('[name=title]').evaluate(el=>el===document.activeElement),true);
   await worker.page.emulateMedia({reducedMotion:'reduce'});
-  assert.equal(await worker.page.locator('[data-step="0"]').evaluate(el=>getComputedStyle(el).animationName),'none');
+  assert.equal(await worker.page.locator('[data-step="1"]').evaluate(el=>getComputedStyle(el).animationName),'none');
   await worker.page.emulateMedia({reducedMotion:'no-preference'});
   await worker.page.locator('[name=title]').fill('Nowy test');await worker.page.locator('[name=event_date]').fill('2026-09-07');
   await worker.page.locator('[name=location]').fill('Sala testowa');await worker.page.locator('[name=body_original]').fill('Tekst testowy');
