@@ -1,3 +1,4 @@
+import {removeMaterial} from './lib/cleanup.js';
 import {materialIdentity,deliver} from './lib/delivery.js';
 import {attachFlow} from './lib/form-flow.js';
 import { supabase as S } from './lib/supabase.js';
@@ -186,9 +187,53 @@ export async function startApp(){
       }finally{st.sending=false;if(button.isConnected)button.disabled=false;document.querySelectorAll('header button').forEach(b=>b.disabled=false);}
     }
 
-    async function mine(){shell('<section class="hero"><h1>Moje materiały</h1></section><section class="card"><div id="list">Ładowanie…</div></section>');const{data,error}=await S.from('mow_submissions').select('id,title,status,consent_status,event_date').eq('author_id',st.user.id).order('created_at',{ascending:false});if(error)return $('#list').textContent=error.message;$('#list').innerHTML=data?.length?data.map(row).join(''):'Brak materiałów.';openers()}
-    async function mod(){if(st.profile?.role!=='moderator')return home();shell('<section class="hero"><h1>Panel moderatora</h1></section><section class="card"><div id="list">Ładowanie…</div></section>');const{data,error}=await S.from('mow_submissions').select('id,title,status,consent_status,event_date').neq('status','draft').order('created_at',{ascending:false});if(error)return $('#list').textContent=error.message;$('#list').innerHTML=data?.length?data.map(row).join(''):'Brak zgłoszeń.';openers()}
-    function row(x){return `<article class="item"><div><b>${esc(x.title)}</b><span class="status">${labels[x.status]||x.status}</span>${x.consent_status==='needs_review'?'<span class="warn">RODO — sprawdź</span>':''}</div><small>${esc(x.event_date)}</small><button data-open="${x.id}">Otwórz</button></article>`}
+    async function mine(){
+      history.replaceState({},'',ENTRY==='admin'?'/admin/':'/wychowawca/');
+      shell('<section class="hero"><h1>Moje materiały</h1></section><section class="card"><p id="listNotice" role="status"></p><div id="list">Ładowanie…</div></section>');
+      const{data,error}=await S.from('mow_submissions').select('id,title,status,consent_status,event_date').eq('author_id',st.user.id).order('created_at',{ascending:false});
+      if(error)return $('#list').textContent=error.message;
+      $('#list').innerHTML=data?.length?data.map(x=>row(x,true)).join(''):'Brak materiałów.';openers();bindRemovals(mine);
+    }
+    function bindRemovals(refresh){document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>confirmRemoval(b.dataset.delete,b.closest('.item').querySelector('b').textContent,refresh));}
+    async function mod(view='active'){
+      if(st.profile?.role!=='moderator')return home();if(view!=='published')view='active';
+      history.replaceState({},'',(ENTRY==='admin'?'/admin/':'/wychowawca/'));
+      shell('<section class="hero"><h1>Panel moderatora</h1><p>Do obsługi widzisz tylko materiały, które nie zostały jeszcze opublikowane.</p></section><div class="actions moderator-tabs"><button id="activeTab" aria-pressed="'+(view==='active')+'">Do obsługi</button><button id="publishedTab" aria-pressed="'+(view==='published')+'">Opublikowane</button></div><section class="card"><p id="listNotice" role="status"></p><div id="list">Ładowanie…</div><button id="moreMaterials" hidden>Wczytaj kolejne 20</button></section>');
+      $('#activeTab').onclick=()=>mod('active');$('#publishedTab').onclick=()=>mod('published');
+      const list=$('#list'),more=$('#moreMaterials');let offset=0,busy=false;
+      async function load(){
+        if(busy)return;busy=true;more.disabled=true;
+        try{
+          let query=S.from('mow_submissions').select('id,title,status,consent_status,event_date').neq('status','draft');
+          query=view==='published'?query.eq('status','published'):query.neq('status','published');
+          const {data,error}=await query.order('created_at',{ascending:false}).order('id',{ascending:false}).range(offset,offset+19);
+          if(!list.isConnected)return;
+          if(error){$('#listNotice').textContent=error.message;if(!offset)list.textContent='Nie udało się pobrać listy.';more.hidden=false;more.textContent='Ponów pobieranie';return;}
+          $('#listNotice').textContent='';if(!offset)list.innerHTML='';
+          list.insertAdjacentHTML('beforeend',data.map(x=>row(x,true)).join(''));
+          if(!offset&&!data.length)list.textContent=view==='published'?'Brak opublikowanych materiałów.':'Brak materiałów do obsługi.';
+          offset+=data.length;more.hidden=data.length<20;more.textContent='Wczytaj kolejne 20';openers();
+          bindRemovals(()=>mod(view));
+        }finally{busy=false;if(more.isConnected)more.disabled=false;}
+      }
+      more.onclick=load;await load();
+    }
+    function confirmRemoval(id,title,refresh){
+      if(!st.user||document.querySelector('#removeDialog'))return;
+      const dialog=document.createElement('dialog');dialog.id='removeDialog';dialog.setAttribute('aria-labelledby','removeTitle');
+      dialog.innerHTML='<h2 id="removeTitle">Usunąć materiał z aplikacji?</h2><p><b>'+esc(title)+'</b></p><p>Trwale usuniesz opis, zdjęcia i historię redakcji z aplikacji. Materiał zniknie także z listy autora.</p><p><b>Jeśli materiał opublikowano na Facebooku, post pozostanie bez zmian.</b> Tej operacji nie można cofnąć w aplikacji.</p><div class="actions"><button id="cancelRemove" autofocus>Anuluj</button><button class="danger-button" id="confirmRemove">Usuń z aplikacji</button></div><p id="removeStatus" role="status"></p>';
+      document.body.append(dialog);dialog.showModal();let busy=false;
+      dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>dialog.remove());
+      $('#cancelRemove').onclick=()=>dialog.close();
+      $('#confirmRemove').onclick=async()=>{
+        if(busy)return;busy=true;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);
+        const msg=$('#removeStatus');
+        try{await removeMaterial(S,id,text=>msg.textContent=text);dialog.close();await refresh();if($('#listNotice'))$('#listNotice').textContent='Materiał usunięty z aplikacji. Ewentualny post na Facebooku pozostaje bez zmian.';}
+        catch(error){msg.textContent='Usuwanie nie zostało zakończone. '+(error.message||'Sprawdź połączenie.')+' Możesz ponowić; zapis materiału pozostaje do zakończenia usuwania.';}
+        finally{busy=false;if(dialog.isConnected)dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
+      };
+    }
+    function row(x,canRemove=false){return `<article class="item"><div><b>${esc(x.title)}</b><span class="status">${labels[x.status]||x.status}</span>${x.consent_status==='needs_review'?'<span class="warn">RODO — sprawdź</span>':''}</div><small>${esc(x.event_date)}</small><div class="actions"><button data-open="${x.id}">Otwórz</button>${canRemove?`<button class="danger-button" data-delete="${x.id}" aria-label="Usuń materiał: ${esc(x.title)}">USUŃ</button>`:''}</div></article>`}
     function openers(){document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>location.href=`${ENTRY==='admin'?'/admin/':'/wychowawca/'}?submission=${b.dataset.open}`)}
 
     function fbPreview(text,urls){

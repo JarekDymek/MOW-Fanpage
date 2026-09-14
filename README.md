@@ -1,6 +1,6 @@
 # MOW Fanpage
 
-Samodzielna PWA do przekazywania materiałów z MOW do ręcznej publikacji na Facebooku. Odzyskana lokalnie 7 września 2026 z repozytorium `JarekDymek/MOW-Fanpage` (punkt wyjścia `e271fd514fa0ca679a8669e8711501a561b478da`) i rozmowy „Przygotuj formularz MOW”. Wydanie 1.1.0 przygotowane 9 września 2026 na wyraźne zlecenie publikacji.
+Samodzielna PWA do przekazywania materiałów z MOW do ręcznej publikacji na Facebooku. Odzyskana lokalnie 7 września 2026 z repozytorium `JarekDymek/MOW-Fanpage` (punkt wyjścia `e271fd514fa0ca679a8669e8711501a561b478da`) i rozmowy „Przygotuj formularz MOW”. Wydanie 1.3.0 przygotowane 9 września 2026 na wyraźne zlecenie publikacji.
 
 ## Role i przebieg
 
@@ -70,3 +70,11 @@ Funkcja powiadomień zapisuje komunikaty wewnątrz aplikacji; nie wysyła Web Pu
 ## Interfejs 1.1.0
 
 Pięć kroków z czerwonym oznaczeniem braków, tekstowym statusem i delikatnym podświetleniem następnego kroku. Nawigacja w górnym panelu i przyciski Dalej pod sekcjami. Duże, kontrastowe przyciski, responsywny układ oraz respektowanie prefers-reduced-motion. Pełna instrukcja startowa jest zwinięta; przycisk pomocy nie zasłania formularza. Limity przygotowania zdjęć: 15 plików, do 20 MiB każdy i 120 MiB łącznie; gotowe JPEG do 3 MiB. Żądania kończą oczekiwanie po 45 sekundach, bez automatycznej pętli wysyłania. Moderator nie otrzymuje na liście nieukończonych szkiców.
+
+## Opublikowane materiały - 1.2.0
+
+Moderator ma osobne widoki Do obsługi i Opublikowane, stronicowane po 20 pozycji. Opcja Usuń z aplikacji wymaga pojedynczego potwierdzenia tytułu. Usuwa zdjęcia przez Storage API, potem rekord z kaskadą metadanych zdjęć, redakcji i powiadomień. Post na Facebooku pozostaje bez zmian. Materiał znika także u autora. Po częściowym błędzie można ponowić usuwanie z listy; część zdjęć może już być usunięta. RPC wymaga moderatora i statusu published, blokuje usunięcie rekordu, jeżeli pozostały pliki, a ponowienie po usunięciu jest bezpieczne. Migracja 20260909144518 zmienia wyłącznie funkcję MOW i politykę magazynu mow-materials; nie usuwa żadnych istniejących materiałów. Test transakcyjny z rollback sprawdził uprawnienia, stan published, blokadę przy istniejących plikach oraz kaskadę.
+
+## Usuwanie na każdym etapie - 1.3.0
+
+Przycisk USUŃ jest dostępny przy każdym zapisanym materiale w Moich materiałach (wychowawca i moderator) oraz na listach moderatora. Nowe RPC mow_delete_submission pozwala autorowi usunąć własny materiał w dowolnym statusie, a moderatorowi każdy materiał. Anonimowy dostęp i usuwanie cudzych materiałów przez wychowawcę są blokowane. Czyszczenie obejmuje także pliki szkicu zapisane w jego folderze przed zapisem metadanych; rekordu nie można usunąć przed zdjęciami. Jeden dialog potwierdzenia, post na Facebooku bez zmian. Poprzednie mow_delete_published pozostaje dla zgodności starszego interfejsu. Migracja 20260909210325 nie usuwa istniejących danych.

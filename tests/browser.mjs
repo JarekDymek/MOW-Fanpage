@@ -14,6 +14,7 @@ await fixturePage.close();
 const author='11111111-1111-4111-8111-111111111111',moderator='22222222-2222-4222-8222-222222222222';
 let submission={id:'33333333-3333-4333-8333-333333333333',author_id:author,title:'Próba formularza – dane fikcyjne',event_date:'2026-09-07',location:'Sala testowa',body_original:'Fikcyjny opis wydarzenia do testu.',editorial_mode:'edit_approval',consent_status:'verified',status:'submitted'};
 let revisions=[],photoCount=15,failUpload=false,failedOnce=false,insertCount=0,signCalls=0,insertedPhotos=[];
+let mainRemoved=false,archived=[],failRemove=false,removeCalls=0,deleteCalls=0;
 const calls=[];
 async function session(role,{mobile=false,signedIn=true}={}){
   const uid=role==='moderator'?moderator:author;
@@ -37,7 +38,9 @@ async function session(role,{mobile=false,signedIn=true}={}){
       if(body.paths)return reply(body.paths.map(path=>({path,signedURL:'/object/sign/mow-materials/test-photo.png?token=fake',error:null})));
       return reply({signedURL:'/object/sign/mow-materials/test-photo.png?token=fake'});
     }
+    if(path.startsWith('/storage/v1/object/list/'))return reply([]);
     if(path.includes('test-photo.png'))return route.fulfill({status:200,contentType:'image/png',body:png});
+    if(path.startsWith('/storage/v1/object/')&&method==='DELETE'){removeCalls++;if(failRemove){failRemove=false;return reply({message:'Test: brak połączenia',statusCode:'500'},500);}return reply([]);}
     if(path.startsWith('/storage/v1/object/')&&method==='GET')return reply({message:'Not found',statusCode:'404'},404);
     if(path.startsWith('/storage/v1/object/')&&method==='POST'){
       if(failUpload&&!failedOnce){failedOnce=true;return reply({message:'Test przerwanego wysyłania',statusCode:'500',error:'test'},500)}
@@ -47,17 +50,22 @@ async function session(role,{mobile=false,signedIn=true}={}){
     if(path.endsWith('/mow_submissions')){
       if(method==='PATCH'){submission={...submission,...req.postDataJSON()};return reply([{id:submission.id}]);}
       if(method==='POST'){insertCount++;submission={...submission,...req.postDataJSON()};insertedPhotos=[];return reply(submission,201)}
-      if(url.searchParams.get('id')&&url.searchParams.get('id')!=='eq.'+submission.id)return reply(null);
-      return reply(req.headers().accept?.includes('vnd.pgrst.object')?submission:[submission]);
+      const idFilter=url.searchParams.get('id');
+      if(idFilter){const row=[...(mainRemoved?[]:[submission]),...archived].find(x=>'eq.'+x.id===idFilter);return reply(row||null);}
+      let rows=[...(mainRemoved?[]:[submission]),...archived];
+      for(const filter of url.searchParams.getAll('status'))rows=rows.filter(x=>filter.startsWith('eq.')?x.status===filter.slice(3):x.status!==filter.slice(4));
+      const offset=+(url.searchParams.get('offset')||0),limit=+(url.searchParams.get('limit')||1000);return reply(rows.slice(offset,offset+limit));
     }
     if(path.endsWith('/mow_submission_photos')){
       if(method==='POST'){insertedPhotos.push(req.postDataJSON());return reply(null,201);}
+      if(archived.some(x=>'eq.'+x.id===url.searchParams.get('submission_id')))return reply([{storage_path:'test/archived.jpg'}]);
       if(insertCount)return reply(insertedPhotos);
       return reply(Array.from({length:photoCount},(_,i)=>({submission_id:submission.id,order_index:i,storage_path:`${author}/${submission.id}/${i}.jpg`})));
     }
     if(path.endsWith('/mow_revisions'))return reply(revisions);
     if(path.includes('/rpc/')){
       const body=req.postDataJSON();
+      if(path.endsWith('mow_delete_submission')){deleteCalls++;if(body.p_submission_id===submission.id)mainRemoved=true;archived=archived.filter(x=>x.id!==body.p_submission_id);return reply(null);}
       if(path.endsWith('mow_create_revision_and_send')){revisions=[{id:'44444444-4444-4444-8444-444444444444',content:body.p_content,version_no:1}];submission.status='awaiting_author';}
       if(path.endsWith('mow_respond_to_revision')){submission.status=body.p_approved?'approved':'changes_requested';revisions[0].response=submission.status;}
       if(path.endsWith('mow_submit_submission'))submission.status='submitted';
@@ -152,6 +160,24 @@ try{
   reports.push('Przetworzenie PNG, błąd wysyłki i wznowienie bez drugiego zgłoszenia: PASS');
   assert.equal((await worker.page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)),false);
   assert.deepEqual(mod.errors,[]);assert.deepEqual(worker.errors,[]);reports.push('Brak pageerror i poziomego przewijania na 390 px: PASS');
+  archived=Array.from({length:23},(_,i)=>({id:'aaaaaaaa-aaaa-4aaa-aaaa-'+String(i).padStart(12,'0'),title:'Archiwalny test '+i,status:'published',event_date:'2026-09-01',consent_status:'verified'}));
+  await mod.page.setViewportSize({width:390,height:844});await mod.page.goto(origin+'/admin/');await mod.page.locator('#activeTab').waitFor();
+  await mod.page.locator('[data-delete]').waitFor();assert.equal(await mod.page.locator('[data-delete]').count(),1);assert.equal(await mod.page.locator('#list').innerText().then(x=>x.includes('Archiwalny')),false);
+  await mod.page.locator('#publishedTab').click();await mod.page.locator('[data-delete]').first().waitFor();assert.equal(await mod.page.locator('[data-delete]').count(),20);
+  await mod.page.locator('#moreMaterials').click();await mod.page.waitForFunction(()=>document.querySelectorAll('[data-delete]').length===23);
+  await mod.page.locator('[data-delete]').first().click();await mod.page.locator('#cancelRemove').click();assert.equal(removeCalls,0);assert.equal(deleteCalls,0);
+  await mod.page.locator('[data-delete]').first().click();failRemove=true;await mod.page.locator('#confirmRemove').click();await mod.page.getByText(/Usuwanie nie zostało zakończone/).waitFor();assert.equal(deleteCalls,0);
+  await mod.page.locator('#confirmRemove').click();await mod.page.getByText('Materiał usunięty z aplikacji. Ewentualny post na Facebooku pozostaje bez zmian.').waitFor();assert.equal(deleteCalls,1);assert.equal(archived.length,22);
+  assert.equal(await mod.page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await mod.page.screenshot({path:'output/playwright/published-mobile.png',fullPage:false});
+  reports.push('Archiwum: filtr, strony po 20, anulowanie, przerwany cleanup i bezpieczne ponowienie: PASS');
+  for(const status of ['draft','submitted','awaiting_author','approved','published']){
+    mainRemoved=false;submission.status=status;archived=[];
+    await worker.page.locator('[data-mine]').click();await worker.page.locator('[data-delete]').waitFor();
+    await worker.page.locator('[data-delete]').click();await worker.page.locator('#confirmRemove').click();await worker.page.getByText('Brak materiałów.',{exact:true}).waitFor();assert.equal(mainRemoved,true);
+  }
+  mainRemoved=false;submission.author_id=moderator;submission.status='draft';await mod.page.locator('[data-mine]').click();await mod.page.locator('[data-delete]').waitFor();await mod.page.locator('[data-delete]').click();await mod.page.locator('#confirmRemove').click();await mod.page.getByText('Brak materiałów.',{exact:true}).waitFor();
+  assert.deepEqual(worker.errors,[]);assert.deepEqual(mod.errors,[]);reports.push('Moje materiały: usuwanie własnych materiałów wychowawcy i moderatora na różnych etapach: PASS');
   await worker.context.close();await mod.context.close();
   fs.writeFileSync('output/playwright/results.json',JSON.stringify({reports,signCalls,productionWrites:0,scope:'Real browser, mocked Supabase; no live backend or native Facebook test.'},null,2));
   console.log(reports.join('\n'));

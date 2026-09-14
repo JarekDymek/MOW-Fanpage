@@ -9,3 +9,5 @@ header{position:relative;flex-wrap:wrap;padding-top:18px;padding-bottom:18px}hea
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 .section-next{display:block;margin:22px 0 0 auto;background:#e4edf7;color:#17456c;border:2px solid #98b5cf}.step-complete .section-next{background:#dcefe4;color:#215a40}body:has(.home-actions) header [data-home],body:has(.home-actions) header [data-new],body:has(.home-actions) header [data-mine],body:has(.home-actions) header [data-profile],body:has(.home-actions) header [data-mod]{display:none}
+
+.moderator-tabs button[aria-pressed=true]{background:#17345b;color:white;outline:3px solid #88a9ca}.danger-button{background:#fff2f0;color:#922a20;border:2px solid #b84c42}.danger-button:hover{background:#fbd8d2}#removeDialog{width:min(600px,calc(100% - 28px));max-height:90vh;overflow:auto;border:2px solid #adbacb;border-radius:18px;padding:24px;color:#162134}#removeDialog::backdrop{background:#10233bc9}#removeDialog h2{margin-top:0}#moreMaterials{margin-top:24px;width:100%}button[hidden]{display:none}
