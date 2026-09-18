@@ -28,6 +28,7 @@ Deno.serve(async(req)=>{
       case 'reject': return await moderatorDecision(req,body.requestId,'rejected');
       case 'revoke': return await moderatorDecision(req,body.requestId,'revoked');
       case 'delete': return await moderatorDelete(req,body.requestId);
+      case 'deactivate': return await moderatorDeactivate(req,body.workEmail);
       default:return json({error:'Nieznana operacja.'},400);
     }
   }catch(error){
@@ -215,6 +216,32 @@ async function moderatorDelete(req,requestId){
     .select('id').maybeSingle();
   if(error)throw error;
   if(!data)return json({error:'Można usunąć tylko oczekującą, nieaktywną prośbę.'},409);
+  return json({ok:true});
+}
+
+async function moderatorDeactivate(req,workEmail){
+  const moderator=await requireModerator(req);
+  if(!moderator)return json({error:'Brak uprawnień moderatora.'},403);
+  const email=String(workEmail||'').trim().toLowerCase();
+  if(!email)return json({error:'Brak adresu użytkownika.'},400);
+
+  const {data:rows,error:rowsError}=await service.from('mow_access_requests')
+    .select('id,auth_user_id,work_email,status').ilike('work_email',email).eq('status','approved');
+  if(rowsError)throw rowsError;
+  if(!rows?.length)return json({error:'Użytkownik nie ma aktywnego dostępu.'},404);
+
+  const ids=[...new Set(rows.map(x=>x.auth_user_id).filter(Boolean))];
+  if(ids.length){
+    const {data:profiles,error:profileError}=await service.from('mow_profiles').select('id,role').in('id',ids);
+    if(profileError)throw profileError;
+    if((profiles||[]).some(p=>p.role==='moderator'))return json({error:'Nie można usunąć dostępu moderatora.'},403);
+  }
+
+  const now=new Date().toISOString();
+  const {error:updateError}=await service.from('mow_access_requests').update({
+    status:'revoked',revoked_at:now,revoked_by:moderator.id,updated_at:now
+  }).ilike('work_email',email).eq('status','approved');
+  if(updateError)throw updateError;
   return json({ok:true});
 }
 
