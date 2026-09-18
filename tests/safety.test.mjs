@@ -33,6 +33,9 @@ test('New educator activation is moderator-gated and cannot self-register by mag
   assert.doesNotMatch(app,/shouldCreateUser:true/);
   assert.match(edge,/case 'approve'/);
   assert.match(edge,/case 'delete'/);
+  assert.match(edge,/case 'deactivate'/);
+  assert.match(edge,/Nie można usunąć dostępu moderatora/);
+  assert.match(app,/data-deactivate-email/);
   assert.match(edge,/requireModerator/);
   assert.match(edge,/\.eq\('status','pending'\)/);
   assert.match(edge,/activeUsers/);
