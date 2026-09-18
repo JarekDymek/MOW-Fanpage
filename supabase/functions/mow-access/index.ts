@@ -27,6 +27,7 @@ Deno.serve(async(req)=>{
       case 'approve': return await moderatorDecision(req,body.requestId,'approved');
       case 'reject': return await moderatorDecision(req,body.requestId,'rejected');
       case 'revoke': return await moderatorDecision(req,body.requestId,'revoked');
+      case 'delete': return await moderatorDelete(req,body.requestId);
       default:return json({error:'Nieznana operacja.'},400);
     }
   }catch(error){
@@ -147,11 +148,46 @@ async function ensureModeratorAccount(){
 async function moderatorList(req){
   const moderator=await requireModerator(req);
   if(!moderator)return json({error:'Brak uprawnień moderatora.'},403);
-  const {data,error}=await service.from('mow_access_requests')
-    .select('id,work_email,status,requested_at,approved_at,rejected_at,revoked_at,auth_user_id')
-    .eq('is_legacy',false).order('requested_at',{ascending:false}).limit(100);
-  if(error)throw error;
-  return json({requests:data||[]});
+
+  const {data:pending,error:pendingError}=await service.from('mow_access_requests')
+    .select('id,work_email,status,requested_at')
+    .eq('is_legacy',false).eq('status','pending')
+    .order('requested_at',{ascending:false}).limit(100);
+  if(pendingError)throw pendingError;
+
+  const {data:approved,error:approvedError}=await service.from('mow_access_requests')
+    .select('auth_user_id,work_email,approved_at')
+    .eq('status','approved').order('approved_at',{ascending:false}).limit(200);
+  if(approvedError)throw approvedError;
+
+  const ids=[...new Set((approved||[]).map(x=>x.auth_user_id).filter(Boolean))];
+  let profiles=[];
+  if(ids.length){
+    const {data,error}=await service.from('mow_profiles').select('id,full_name,work_email,role').in('id',ids);
+    if(error)throw error;
+    profiles=data||[];
+  }
+  const profileById=new Map(profiles.map(p=>[p.id,p]));
+  const activeByEmail=new Map();
+  for(const row of approved||[]){
+    const profile=row.auth_user_id?profileById.get(row.auth_user_id):null;
+    if(profile?.role==='moderator')continue;
+    const email=String(row.work_email||profile?.work_email||'').trim().toLowerCase();
+    if(!email)continue;
+    const current=activeByEmail.get(email);
+    if(current){
+      current.devices+=1;
+      if(!current.full_name&&profile?.full_name)current.full_name=profile.full_name;
+      continue;
+    }
+    activeByEmail.set(email,{
+      work_email:email,
+      full_name:profile?.full_name||null,
+      approved_at:row.approved_at,
+      devices:1
+    });
+  }
+  return json({requests:pending||[],activeUsers:[...activeByEmail.values()]});
 }
 
 async function moderatorDecision(req,requestId,status){
@@ -168,6 +204,18 @@ async function moderatorDecision(req,requestId,status){
   if(error)throw error;
   if(!data)return json({error:'Prośba nie istnieje.'},404);
   return json({ok:true,request:data});
+}
+
+async function moderatorDelete(req,requestId){
+  const moderator=await requireModerator(req);
+  if(!moderator)return json({error:'Brak uprawnień moderatora.'},403);
+  if(!requestId)return json({error:'Brak identyfikatora prośby.'},400);
+  const {data,error}=await service.from('mow_access_requests').delete()
+    .eq('id',requestId).eq('status','pending').eq('is_legacy',false).is('auth_user_id',null)
+    .select('id').maybeSingle();
+  if(error)throw error;
+  if(!data)return json({error:'Można usunąć tylko oczekującą, nieaktywną prośbę.'},409);
+  return json({ok:true});
 }
 
 async function requireModerator(req){

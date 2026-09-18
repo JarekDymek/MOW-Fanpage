@@ -32,7 +32,12 @@ test('New educator activation is moderator-gated and cannot self-register by mag
   assert.match(app,/isStandalone\(\)/);
   assert.doesNotMatch(app,/shouldCreateUser:true/);
   assert.match(edge,/case 'approve'/);
+  assert.match(edge,/case 'delete'/);
   assert.match(edge,/requireModerator/);
+  assert.match(edge,/\.eq\('status','pending'\)/);
+  assert.match(edge,/activeUsers/);
+  assert.match(app,/Zatwierdzeni użytkownicy/);
+  assert.match(app,/data-access-action="delete"/);
   assert.match(edge,/@mowmalbork\\\.pl/);
   assert.match(migration,/mow_has_access/);
   assert.match(migration,/as restrictive for all to authenticated/);
