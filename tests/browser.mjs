@@ -65,6 +65,7 @@ async function session(role,{mobile=false,signedIn=true}={}){
     if(path.endsWith('/mow_revisions'))return reply(revisions);
     if(path.includes('/rpc/')){
       const body=req.postDataJSON();
+      if(path.endsWith('mow_has_access'))return reply(true);
       if(path.endsWith('mow_delete_submission')){deleteCalls++;if(body.p_submission_id===submission.id)mainRemoved=true;archived=archived.filter(x=>x.id!==body.p_submission_id);return reply(null);}
       if(path.endsWith('mow_create_revision_and_send')){revisions=[{id:'44444444-4444-4444-8444-444444444444',content:body.p_content,version_no:1}];submission.status='awaiting_author';}
       if(path.endsWith('mow_respond_to_revision')){submission.status=body.p_approved?'approved':'changes_requested';revisions[0].response=submission.status;}
@@ -79,14 +80,15 @@ async function session(role,{mobile=false,signedIn=true}={}){
 }
 try{
   const guest=await session('employee',{signedIn:false});
-  for(const path of ['/admin/','/wychowawca/']){
-    await guest.page.goto(origin+path);await guest.page.locator('#l').waitFor();
-    assert.equal(await guest.page.locator('input[type=email]').count(),1);
-  }
+  await guest.page.goto(origin+'/admin/');await guest.page.locator('#l').waitFor();
+  assert.equal(await guest.page.locator('input[type=email]').count(),1);
+  await guest.page.goto(origin+'/wychowawca/');await guest.page.getByText('MOW Fanpage – aplikacja wewnętrzna',{exact:true}).waitFor();
+  assert.equal(await guest.page.locator('#legacyLogin').count(),1);
   await guest.page.keyboard.press('p');await guest.page.locator('#mowHelpOverlay').waitFor();
   await guest.page.keyboard.press('Escape');assert.equal(await guest.page.locator('#mowHelpOverlay').count(),0);
+  await guest.page.locator('#legacyLogin').click();await guest.page.locator('#l').waitFor();
   await guest.page.locator('input[type=email]').fill('p');assert.equal(await guest.page.locator('#mowHelpOverlay').count(),0);
-  reports.push('Start obu wejść i pomoc P/Esc bez logowania: PASS');await guest.context.close();
+  reports.push('Admin login oraz instalacyjny start wychowawcy i pomoc P/Esc: PASS');await guest.context.close();
 
   const mod=await session('moderator');
   await mod.page.goto(origin+'/admin/?submission='+submission.id);await mod.page.locator('#rev').waitFor();
