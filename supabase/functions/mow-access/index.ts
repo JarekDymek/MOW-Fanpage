@@ -150,7 +150,7 @@ async function moderatorList(req){
   if(!moderator)return json({error:'Brak uprawnień moderatora.'},403);
 
   const {data:pending,error:pendingError}=await service.from('mow_access_requests')
-    .select('id,work_email,requested_at')
+    .select('id,work_email,status,requested_at')
     .eq('is_legacy',false).eq('status','pending')
     .order('requested_at',{ascending:false}).limit(100);
   if(pendingError)throw pendingError;
