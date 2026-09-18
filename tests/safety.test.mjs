@@ -22,3 +22,18 @@ test('Worker only removes MOW caches and never handles private assets or API dat
   let response;events.fetch({request:{mode:'navigate'},respondWith:promise=>response=promise});
   assert.equal((await response).status,503);assert.match(await(await response).text(),/Brak połączenia/);
 });
+
+
+test('New educator activation is moderator-gated and cannot self-register by magic link',()=>{
+  const app=fs.readFileSync(new URL('../src/app.js',import.meta.url),'utf8');
+  const edge=fs.readFileSync(new URL('../supabase/functions/mow-access/index.ts',import.meta.url),'utf8');
+  const migration=fs.readFileSync(new URL('../supabase/migrations/20260918065530_mow_device_access_approval.sql',import.meta.url),'utf8');
+  assert.match(app,/requestDeviceAccess\(S/);
+  assert.match(app,/isStandalone\(\)/);
+  assert.doesNotMatch(app,/shouldCreateUser:true/);
+  assert.match(edge,/case 'approve'/);
+  assert.match(edge,/requireModerator/);
+  assert.match(edge,/@mowmalbork\\\.pl/);
+  assert.match(migration,/mow_has_access/);
+  assert.match(migration,/as restrictive for all to authenticated/);
+});

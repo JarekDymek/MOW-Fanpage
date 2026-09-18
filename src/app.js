@@ -3,13 +3,14 @@ import {materialIdentity,deliver} from './lib/delivery.js';
 import {attachFlow} from './lib/form-flow.js';
 import { supabase as S } from './lib/supabase.js';
 import { isFacebookPostUrl } from './lib/publication.js';
+import {checkDeviceAccess,clearDeviceAccess,isStandalone,loadDeviceAccess,requestDeviceAccess,signInApprovedDevice} from './lib/access.js';
 
 export async function startApp(){
   try {
     const ENTRY=location.pathname.startsWith('/admin')?'admin':'employee';
     const WORKER=ENTRY==='employee';
     const SHARE_BATCH_SIZE=10;
-    const st={user:null,profile:null,photos:[],install:null,shareFiles:[],shareOffset:0};
+    const st={user:null,profile:null,photos:[],install:null,shareFiles:[],shareOffset:0,legacyLogin:false,accessPoll:null,accessChecking:false,accessDenied:false};
     const $=(q,r=document)=>r.querySelector(q);
     const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const labels={draft:'Szkic',submitted:'Nowe',editing:'Do redakcji',awaiting_author:'Czeka na autora',changes_requested:'Do poprawki',approved:'Zaakceptowane',published:'Opublikowane',rejected:'Wstrzymane'};
@@ -34,18 +35,27 @@ export async function startApp(){
       const {data:{session},error}=await S.auth.getSession();
       if(error) throw error;
       st.user=session?.user||null;
+      if(st.user&&!await sessionAllowed()){await S.auth.signOut();st.user=null;st.accessDenied=true;}
       if(st.user) await loadProfile();
       S.auth.onAuthStateChange((_event,session)=>{
         const nextUser=session?.user||null;
         if(nextUser?.id===st.user?.id)return;
         st.user=nextUser;st.profile=null;
-        // Release Supabase's auth lock before requesting the profile.
+        // Release Supabase's auth lock before requesting profile/access state.
         setTimeout(async()=>{
-          try{if(st.user)await loadProfile();await render();}
-          catch(error){shell(`<section class="card"><h1>Nie udało się otworzyć profilu</h1><p>${esc(error.message)}</p><p>Odśwież stronę, aby ponowić próbę.</p></section>`);}
+          try{
+            if(st.user&&!await sessionAllowed()){await S.auth.signOut();st.user=null;st.accessDenied=true;}
+            if(st.user)await loadProfile();
+            await render();
+          }catch(error){shell(`<section class="card"><h1>Nie udało się otworzyć profilu</h1><p>${esc(error.message)}</p><p>Odśwież stronę, aby ponowić próbę.</p></section>`);}
         },0);
       });
       await render();
+    }
+
+    async function sessionAllowed(){
+      const {data,error}=await S.rpc('mow_has_access');
+      return !error&&data===true;
     }
 
     async function loadProfile(){
@@ -55,21 +65,23 @@ export async function startApp(){
     }
 
     function shell(body){
+      if(st.accessPoll){clearInterval(st.accessPoll);st.accessPoll=null;}
       for(const url of [...(st.thumbUrls||[]),...(st.downloadUrls||[])])URL.revokeObjectURL(url);
       st.thumbUrls=[];st.downloadUrls=[];st.shareFiles=[];
-      document.body.innerHTML=`<header><div class="brand"><img src="/icons/icon.svg" alt=""><b>MOW Fanpage</b>${ENTRY==='admin'?'<span class="pill">ADMIN</span>':''}</div><nav>${st.user&&st.profile?'<button data-home>Start</button><button data-new>Nowy materiał</button><button data-mine>Moje materiały</button><button data-profile>Profil</button>':''}${st.profile?.role==='moderator'?'<button data-mod>Moderator</button>':''}${st.install?'<button data-install>Zainstaluj</button>':''}${st.user?'<button data-out>Wyloguj</button>':''}</nav></header><main>${body}</main>`;
+      const deviceManaged=WORKER&&!!loadDeviceAccess();
+      document.body.innerHTML=`<header><div class="brand"><img src="/icons/icon.svg" alt=""><b>MOW Fanpage</b>${ENTRY==='admin'?'<span class="pill">ADMIN</span>':''}</div><nav>${st.user&&st.profile?'<button data-home>Start</button><button data-new>Nowy materiał</button><button data-mine>Moje materiały</button><button data-profile>Profil</button>':''}${st.profile?.role==='moderator'?'<button data-mod>Moderator</button>':''}${st.install?'<button data-install>Zainstaluj</button>':''}${st.user?`<button data-out>${deviceManaged?'Odłącz urządzenie':'Wyloguj'}</button>`:''}</nav></header><main>${body}</main>`;
       $('[data-home]')?.addEventListener('click',home);
       $('[data-new]')?.addEventListener('click',form);
       $('[data-mine]')?.addEventListener('click',mine);
       $('[data-profile]')?.addEventListener('click',editProfile);
       $('[data-mod]')?.addEventListener('click',mod);
-      $('[data-out]')?.addEventListener('click',()=>S.auth.signOut());
+      $('[data-out]')?.addEventListener('click',logout);
       $('[data-install]')?.addEventListener('click',async()=>{await st.install.prompt();st.install=null;render()});
       if(WORKER) ensureHelpButton();
     }
 
     function render(){
-      if(!st.user)return login();
+      if(!st.user)return WORKER?(st.legacyLogin?login():accessStart()):login();
       if(!st.profile)return setup();
       const id=new URLSearchParams(location.search).get('submission');
       if(id)return detail(id);
@@ -77,14 +89,76 @@ export async function startApp(){
       home();
     }
 
+    async function logout(){
+      if(WORKER&&loadDeviceAccess()){
+        if(!confirm('Odłączyć tę instalację? Ponowne podłączenie będzie wymagało zgody moderatora.'))return;
+        clearDeviceAccess();
+      }
+      await S.auth.signOut();
+    }
+
     function login(){
-      shell(`<section class="card login"><h1>${ENTRY==='admin'?'Panel administratora':'Materiały do fanpage’a MOW'}</h1><p>Zaloguj się adresem e-mail. Każdy wychowawca widzi tylko własne materiały.</p><form id="l"><label>E-mail<input type="email" name="email" required autocomplete="email"></label><button class="primary">Wyślij link logowania</button><p class="msg"></p></form></section>`);
+      const legacy=WORKER;
+      shell(`<section class="card login"><h1>${ENTRY==='admin'?'Panel administratora':'Logowanie konta z wcześniejszej wersji'}</h1><p>${legacy?'Ta opcja służy tylko osobom, które wcześniej korzystały z MOW Fanpage. Nowe urządzenia aktywuje moderator.':'Zaloguj się adresem e-mail moderatora.'}</p><form id="l"><label>E-mail<input type="email" name="email" required autocomplete="email"></label><button class="primary">Wyślij link logowania</button><p class="msg"></p></form>${legacy?'<button type="button" id="backAccess">Wróć do aktywacji urządzenia</button>':''}</section>`);
+      $('#backAccess')&&($('#backAccess').onclick=()=>{st.legacyLogin=false;render();});
       $('#l').onsubmit=async e=>{
         e.preventDefault();const loginButton=e.currentTarget.querySelector('button');if(loginButton.disabled)return;loginButton.disabled=true;const m=$('.msg'),email=new FormData(e.currentTarget).get('email'),r=`${location.origin}${ENTRY==='admin'?'/admin/':'/wychowawca/'}`;
         m.textContent='Wysyłanie…';
-        const{error}=await S.auth.signInWithOtp({email,options:{emailRedirectTo:r,shouldCreateUser:true}});
+        const{error}=await S.auth.signInWithOtp({email,options:{emailRedirectTo:r,shouldCreateUser:false}});
         m.textContent=error?error.message:'Sprawdź skrzynkę i otwórz link logowania. Kolejny link możesz wysłać za minutę.';setTimeout(()=>{if(loginButton.isConnected)loginButton.disabled=false;},error?1000:60000);
       };
+    }
+
+    function accessStart(){
+      if(!isStandalone())return installIntro();
+      deviceActivation();
+    }
+
+    function installIntro(){
+      const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+      shell(`<section class="card login"><h1>MOW Fanpage – aplikacja wewnętrzna</h1><p>Najpierw zainstaluj aplikację na tym urządzeniu. Prośbę o dostęp wyślesz dopiero po uruchomieniu jej z ikony.</p>${st.install?'<button class="primary" id="installNow">Zainstaluj MOW Fanpage</button>':ios?'<p class="hint"><b>iPhone/iPad:</b> w Safari wybierz Udostępnij → Dodaj do ekranu początkowego, a potem uruchom MOW Fanpage z nowej ikony.</p>':'<p class="hint">Użyj opcji „Zainstaluj aplikację” / „Dodaj do ekranu głównego” w menu przeglądarki, a następnie uruchom MOW Fanpage z ikony.</p>'}<p class="msg"></p><details><summary>Mam konto z wcześniejszej wersji</summary><p>Dotychczasowi użytkownicy mogą awaryjnie zalogować się starym linkiem e-mail.</p><button type="button" id="legacyLogin">Logowanie wcześniejszego konta</button></details></section>`);
+      $('#installNow')&&($('#installNow').onclick=async()=>{const m=$('.msg');await st.install.prompt();const choice=await st.install.userChoice;st.install=null;m.textContent=choice.outcome==='accepted'?'Aplikacja została dodana. Uruchom ją teraz z ikony na ekranie telefonu.':'Instalacja została anulowana.';});
+      $('#legacyLogin').onclick=()=>{st.legacyLogin=true;login();};
+    }
+
+    function deviceActivation(){
+      const state=loadDeviceAccess();
+      if(!state?.requestId){
+        shell(`<section class="card login"><h1>Aktywacja dostępu</h1><p>Wpisz służbowy adres e-mail. Prośba trafi do moderatora; nie otrzymasz linku logowania na swoją pocztę.</p><form id="accessRequest"><label>Służbowy e-mail<input type="email" name="email" required autocomplete="email" placeholder="imie.nazwisko@mowmalbork.pl"></label><button class="primary">Poproś moderatora o dostęp</button><p class="msg"></p></form><details><summary>Mam konto z wcześniejszej wersji</summary><button type="button" id="legacyLogin">Logowanie wcześniejszego konta</button></details></section>`);
+        $('#legacyLogin').onclick=()=>{st.legacyLogin=true;login();};
+        $('#accessRequest').onsubmit=async e=>{
+          e.preventDefault();const b=e.currentTarget.querySelector('button'),m=$('.msg');b.disabled=true;m.textContent='Wysyłanie prośby…';
+          try{await requestDeviceAccess(S,new FormData(e.currentTarget).get('email'));deviceActivation();}
+          catch(error){m.textContent=error.message;b.disabled=false;}
+        };
+        return;
+      }
+      const status=state.status||'pending';
+      const rejected=status==='rejected'||status==='revoked';
+      shell(`<section class="card login"><h1>${rejected?'Dostęp nie jest aktywny':'Oczekiwanie na moderatora'}</h1><p><b>${esc(state.workEmail||'')}</b></p>${rejected?'<p>Moderator odrzucił albo cofnął dostęp tej instalacji.</p>':'<p>Prośba została zapisana. Aplikacja sprawdza decyzję automatycznie; możesz ją zamknąć i wrócić później.</p><p class="status">Status: oczekuje na zatwierdzenie</p>'}<div class="actions">${rejected?'<button class="primary" id="newRequest">Złóż nową prośbę</button>':'<button id="checkAccess">Sprawdź teraz</button>'}</div><p class="msg" id="accessMsg"></p></section>`);
+      if(rejected){$('#newRequest').onclick=()=>{clearDeviceAccess();deviceActivation();};return;}
+      $('#checkAccess').onclick=()=>pollAccess(true);
+      st.accessPoll=setInterval(()=>pollAccess(false),10000);
+      void pollAccess(false);
+    }
+
+    async function pollAccess(showMessage){
+      if(st.accessChecking)return;st.accessChecking=true;
+      const m=$('#accessMsg');
+      try{
+        const state=await checkDeviceAccess(S);
+        if(!state)return;
+        if(state.status==='approved'&&state.loginEmail){
+          if(m)m.textContent='Dostęp zatwierdzony. Uruchamianie aplikacji…';
+          const auth=await signInApprovedDevice(S,state);
+          st.user=auth.user||null;st.profile=null;st.accessDenied=false;
+          if(st.user)await loadProfile();
+          await render();return;
+        }
+        if((state.status==='rejected'||state.status==='revoked')&&m){deviceActivation();return;}
+        if(showMessage&&m)m.textContent='Moderator jeszcze nie zatwierdził tej prośby.';
+      }catch(error){if(showMessage&&m)m.textContent=error.message;}
+      finally{st.accessChecking=false;}
     }
 
     function profileFields(values={}){
@@ -118,7 +192,7 @@ export async function startApp(){
 
     function workerGuide(){
       return `<section class="card mowGuide"><h2>Instrukcja dla wychowawcy</h2><p>Rozwiń temat, którego potrzebujesz. W każdej chwili możesz też użyć przycisku <b>P – Pomoc</b>.</p>
-      <details><summary>Logowanie i profil</summary><p>Zaloguj się swoim adresem e-mail. Przy pierwszym wejściu wpisz imię i nazwisko, funkcję, miejsce pracy i ewentualnie grupę.</p></details>
+      <details><summary>Aktywacja i profil</summary><p>Przy pierwszym użyciu zainstaluj aplikację, uruchom ją z ikony, wpisz służbowy adres e-mail i poczekaj na zgodę moderatora. Po zatwierdzeniu uzupełnij imię i nazwisko, funkcję, miejsce pracy i ewentualnie grupę.</p></details>
       <details><summary>Dodanie materiału</summary><p>Wybierz <b>+ Nowy materiał</b>. Wpisz tytuł, datę, miejsce i tekst opisujący wydarzenie. Uwagi dla moderatora są opcjonalne.</p></details>
       <details><summary>Zdjęcia</summary><p>Dodaj fotografie związane z wydarzeniem i przeznaczone do rozpatrzenia do publikacji. Sprawdź miniatury przed wysłaniem. Maksymalnie piętnaście zdjęć.</p></details>
       <details><summary>Redakcja tekstu</summary><p>Jeżeli chcesz zobaczyć i zaakceptować tekst po redakcji moderatora, wybierz opcję redakcji z akceptacją. Jeżeli tekst ma pozostać w Twoim brzmieniu, wybierz oryginał.</p></details>
@@ -195,11 +269,37 @@ export async function startApp(){
       $('#list').innerHTML=data?.length?data.map(x=>row(x,true)).join(''):'Brak materiałów.';openers();bindRemovals(mine);
     }
     function bindRemovals(refresh){document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>confirmRemoval(b.dataset.delete,b.closest('.item').querySelector('b').textContent,refresh));}
+    async function loadAccessRequests(){
+      const list=$('#accessList'),notice=$('#accessNotice');if(!list)return;
+      const {data,error}=await S.functions.invoke('mow-access',{body:{action:'list'}});
+      if(!list.isConnected)return;
+      if(error||data?.error){notice.textContent=data?.error||error?.message||'Nie udało się pobrać próśb o dostęp.';list.textContent='';return;}
+      const rows=data?.requests||[],names={pending:'Oczekuje',approved:'Aktywny',rejected:'Odrzucony',revoked:'Cofnięty'};
+      list.innerHTML=rows.length?rows.map(x=>{
+        const when=new Date(x.requested_at).toLocaleString('pl-PL');
+        const buttons=x.status==='pending'
+          ?`<button class="primary" data-access-action="approve" data-access-id="${x.id}">Zatwierdź</button><button data-access-action="reject" data-access-id="${x.id}">Odrzuć</button>`
+          :x.status==='approved'
+            ?`<button class="danger-button" data-access-action="revoke" data-access-id="${x.id}">Cofnij dostęp</button>`
+            :`<button data-access-action="approve" data-access-id="${x.id}">Zatwierdź ponownie</button>`;
+        return `<article class="item"><div><b>${esc(x.work_email)}</b><span class="status">${names[x.status]||esc(x.status)}</span></div><small>${esc(when)}</small><div class="actions">${buttons}</div></article>`;
+      }).join(''):'Brak próśb o dostęp.';
+      list.querySelectorAll('[data-access-action]').forEach(button=>button.onclick=()=>accessDecision(button.dataset.accessId,button.dataset.accessAction));
+    }
+
+    async function accessDecision(requestId,action){
+      const notice=$('#accessNotice');if(notice)notice.textContent='Zapisywanie decyzji…';
+      const {data,error}=await S.functions.invoke('mow-access',{body:{action,requestId}});
+      if(error||data?.error){if(notice)notice.textContent=data?.error||error?.message||'Nie udało się zapisać decyzji.';return;}
+      if(notice)notice.textContent=action==='approve'?'Dostęp zatwierdzony.':action==='reject'?'Prośba odrzucona.':'Dostęp cofnięty.';
+      await loadAccessRequests();
+    }
+
     async function mod(view='active'){
       if(st.profile?.role!=='moderator')return home();if(view!=='published')view='active';
       history.replaceState({},'',(ENTRY==='admin'?'/admin/':'/wychowawca/'));
-      shell('<section class="hero"><h1>Panel moderatora</h1><p>Do obsługi widzisz tylko materiały, które nie zostały jeszcze opublikowane.</p></section><div class="actions moderator-tabs"><button id="activeTab" aria-pressed="'+(view==='active')+'">Do obsługi</button><button id="publishedTab" aria-pressed="'+(view==='published')+'">Opublikowane</button></div><section class="card"><p id="listNotice" role="status"></p><div id="list">Ładowanie…</div><button id="moreMaterials" hidden>Wczytaj kolejne 20</button></section>');
-      $('#activeTab').onclick=()=>mod('active');$('#publishedTab').onclick=()=>mod('published');
+      shell('<section class="hero"><h1>Panel moderatora</h1><p>Do obsługi widzisz tylko materiały, które nie zostały jeszcze opublikowane.</p></section><section class="card"><h2>Dostęp do aplikacji</h2><p class="hint">Nowe urządzenie działa dopiero po Twojej zgodzie. Cofnięcie dostępu blokuje je od razu w bazie.</p><p id="accessNotice" role="status"></p><div id="accessList">Ładowanie próśb…</div></section><div class="actions moderator-tabs"><button id="activeTab" aria-pressed="'+(view==='active')+'">Do obsługi</button><button id="publishedTab" aria-pressed="'+(view==='published')+'">Opublikowane</button></div><section class="card"><p id="listNotice" role="status"></p><div id="list">Ładowanie…</div><button id="moreMaterials" hidden>Wczytaj kolejne 20</button></section>');
+      $('#activeTab').onclick=()=>mod('active');$('#publishedTab').onclick=()=>mod('published');void loadAccessRequests();
       const list=$('#list'),more=$('#moreMaterials');let offset=0,busy=false;
       async function load(){
         if(busy)return;busy=true;more.disabled=true;
