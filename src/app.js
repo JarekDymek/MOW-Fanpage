@@ -270,35 +270,34 @@ export async function startApp(){
     }
     function bindRemovals(refresh){document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>confirmRemoval(b.dataset.delete,b.closest('.item').querySelector('b').textContent,refresh));}
     async function loadAccessRequests(){
-      const list=$('#accessList'),notice=$('#accessNotice');if(!list)return;
+      const list=$('#accessList'),activeList=$('#activeAccessList'),activeCount=$('#activeAccessCount'),notice=$('#accessNotice');if(!list)return;
       const {data,error}=await S.functions.invoke('mow-access',{body:{action:'list'}});
       if(!list.isConnected)return;
-      if(error||data?.error){notice.textContent=data?.error||error?.message||'Nie udało się pobrać próśb o dostęp.';list.textContent='';return;}
-      const rows=data?.requests||[],names={pending:'Oczekuje',approved:'Aktywny',rejected:'Odrzucony',revoked:'Cofnięty'};
+      if(error||data?.error){notice.textContent=data?.error||error?.message||'Nie udało się pobrać danych dostępu.';list.textContent='';if(activeList)activeList.textContent='';return;}
+      const rows=data?.requests||[],active=data?.activeUsers||[];
       list.innerHTML=rows.length?rows.map(x=>{
         const when=new Date(x.requested_at).toLocaleString('pl-PL');
-        const buttons=x.status==='pending'
-          ?`<button class="primary" data-access-action="approve" data-access-id="${x.id}">Zatwierdź</button><button data-access-action="reject" data-access-id="${x.id}">Odrzuć</button>`
-          :x.status==='approved'
-            ?`<button class="danger-button" data-access-action="revoke" data-access-id="${x.id}">Cofnij dostęp</button>`
-            :`<button data-access-action="approve" data-access-id="${x.id}">Zatwierdź ponownie</button>`;
-        return `<article class="item"><div><b>${esc(x.work_email)}</b><span class="status">${names[x.status]||esc(x.status)}</span></div><small>${esc(when)}</small><div class="actions">${buttons}</div></article>`;
-      }).join(''):'Brak próśb o dostęp.';
+        return `<article class="item access-item"><div class="access-head"><b class="access-email">${esc(x.work_email)}</b></div><small>${esc(when)}</small><div class="access-actions"><button class="primary" data-access-action="approve" data-access-id="${x.id}">Zatwierdź</button><button data-access-action="reject" data-access-id="${x.id}">Odrzuć</button><button class="danger-button" data-access-action="delete" data-access-id="${x.id}">Usuń</button></div></article>`;
+      }).join(''):'Brak próśb do zatwierdzenia.';
+      if(activeCount)activeCount.textContent=`(${active.length})`;
+      if(activeList)activeList.innerHTML=active.length?active.map(x=>`<article class="access-user"><b>${esc(x.full_name||'Profil jeszcze nieuzupełniony')}</b><span class="access-email">${esc(x.work_email)}</span>${x.devices>1?`<small>Aktywne urządzenia: ${x.devices}</small>`:''}</article>`).join(''):'Brak zatwierdzonych użytkowników.';
       list.querySelectorAll('[data-access-action]').forEach(button=>button.onclick=()=>accessDecision(button.dataset.accessId,button.dataset.accessAction));
     }
 
     async function accessDecision(requestId,action){
-      const notice=$('#accessNotice');if(notice)notice.textContent='Zapisywanie decyzji…';
+      const notice=$('#accessNotice');
+      if(action==='delete'&&!confirm('Usunąć tę oczekującą prośbę o dostęp?'))return;
+      if(notice)notice.textContent='Zapisywanie decyzji…';
       const {data,error}=await S.functions.invoke('mow-access',{body:{action,requestId}});
       if(error||data?.error){if(notice)notice.textContent=data?.error||error?.message||'Nie udało się zapisać decyzji.';return;}
-      if(notice)notice.textContent=action==='approve'?'Dostęp zatwierdzony.':action==='reject'?'Prośba odrzucona.':'Dostęp cofnięty.';
+      if(notice)notice.textContent=action==='approve'?'Dostęp zatwierdzony.':action==='reject'?'Prośba odrzucona.':'Prośba usunięta.';
       await loadAccessRequests();
     }
 
     async function mod(view='active'){
       if(st.profile?.role!=='moderator')return home();if(view!=='published')view='active';
       history.replaceState({},'',(ENTRY==='admin'?'/admin/':'/wychowawca/'));
-      shell('<section class="hero"><h1>Panel moderatora</h1><p>Do obsługi widzisz tylko materiały, które nie zostały jeszcze opublikowane.</p></section><section class="card"><h2>Dostęp do aplikacji</h2><p class="hint">Nowe urządzenie działa dopiero po Twojej zgodzie. Cofnięcie dostępu blokuje je od razu w bazie.</p><p id="accessNotice" role="status"></p><div id="accessList">Ładowanie próśb…</div></section><div class="actions moderator-tabs"><button id="activeTab" aria-pressed="'+(view==='active')+'">Do obsługi</button><button id="publishedTab" aria-pressed="'+(view==='published')+'">Opublikowane</button></div><section class="card"><p id="listNotice" role="status"></p><div id="list">Ładowanie…</div><button id="moreMaterials" hidden>Wczytaj kolejne 20</button></section>');
+      shell('<section class="hero"><h1>Panel moderatora</h1><p>Do obsługi widzisz tylko materiały, które nie zostały jeszcze opublikowane.</p></section><section class="card access-card"><h2>Prośby o dostęp</h2><p class="hint">Tutaj są tylko prośby wymagające Twojej decyzji.</p><p id="accessNotice" role="status"></p><div id="accessList">Ładowanie próśb…</div><details class="access-folder"><summary>Zatwierdzeni użytkownicy <span id="activeAccessCount"></span></summary><div id="activeAccessList">Ładowanie listy…</div></details></section><div class="actions moderator-tabs"><button id="activeTab" aria-pressed="'+(view==='active')+'">Do obsługi</button><button id="publishedTab" aria-pressed="'+(view==='published')+'">Opublikowane</button></div><section class="card"><p id="listNotice" role="status"></p><div id="list">Ładowanie…</div><button id="moreMaterials" hidden>Wczytaj kolejne 20</button></section>');
       $('#activeTab').onclick=()=>mod('active');$('#publishedTab').onclick=()=>mod('published');void loadAccessRequests();
       const list=$('#list'),more=$('#moreMaterials');let offset=0,busy=false;
       async function load(){
