@@ -4,11 +4,16 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -20,3 +25,12 @@ jobs:
           name: dist
           path: dist
           retention-days: 1
+      - name: Save deployment snapshot on temporary branch
+        run: |
+          if [ -e deploy-dist/version.json ]; then exit 0; fi
+          cp -R dist deploy-dist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy-dist
+          git commit -m "Store tested deployment snapshot [skip ci]"
+          git push origin HEAD:${{ github.head_ref }}
