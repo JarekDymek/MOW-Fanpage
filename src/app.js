@@ -280,8 +280,9 @@ export async function startApp(){
         return `<article class="item access-item"><div class="access-head"><b class="access-email">${esc(x.work_email)}</b></div><small>${esc(when)}</small><div class="access-actions"><button class="primary" data-access-action="approve" data-access-id="${x.id}">Zatwierdź</button><button data-access-action="reject" data-access-id="${x.id}">Odrzuć</button><button class="danger-button" data-access-action="delete" data-access-id="${x.id}">Usuń</button></div></article>`;
       }).join(''):'Brak próśb do zatwierdzenia.';
       if(activeCount)activeCount.textContent=`(${active.length})`;
-      if(activeList)activeList.innerHTML=active.length?active.map(x=>`<article class="access-user"><b>${esc(x.full_name||'Profil jeszcze nieuzupełniony')}</b><span class="access-email">${esc(x.work_email)}</span>${x.devices>1?`<small>Aktywne urządzenia: ${x.devices}</small>`:''}</article>`).join(''):'Brak zatwierdzonych użytkowników.';
+      if(activeList)activeList.innerHTML=active.length?active.map(x=>`<article class="access-user"><div><b>${esc(x.full_name||'Profil jeszcze nieuzupełniony')}</b><span class="access-email">${esc(x.work_email)}</span>${x.devices>1?`<small>Aktywne urządzenia: ${x.devices}</small>`:''}</div><button class="danger-button access-revoke" data-deactivate-email="${esc(x.work_email)}">Usuń dostęp</button></article>`).join(''):'Brak zatwierdzonych użytkowników.';
       list.querySelectorAll('[data-access-action]').forEach(button=>button.onclick=()=>accessDecision(button.dataset.accessId,button.dataset.accessAction));
+      activeList?.querySelectorAll('[data-deactivate-email]').forEach(button=>button.onclick=()=>deactivateUser(button.dataset.deactivateEmail));
     }
 
     async function accessDecision(requestId,action){
@@ -291,6 +292,15 @@ export async function startApp(){
       const {data,error}=await S.functions.invoke('mow-access',{body:{action,requestId}});
       if(error||data?.error){if(notice)notice.textContent=data?.error||error?.message||'Nie udało się zapisać decyzji.';return;}
       if(notice)notice.textContent=action==='approve'?'Dostęp zatwierdzony.':action==='reject'?'Prośba odrzucona.':'Prośba usunięta.';
+      await loadAccessRequests();
+    }
+
+    async function deactivateUser(workEmail){
+      if(!confirm(`Usunąć dostęp użytkownika ${workEmail}? Przy następnym wejściu będzie musiał ponownie poprosić o dostęp właściwym adresem służbowym.`))return;
+      const notice=$('#accessNotice');if(notice)notice.textContent='Usuwanie dostępu…';
+      const {data,error}=await S.functions.invoke('mow-access',{body:{action:'deactivate',workEmail}});
+      if(error||data?.error){if(notice)notice.textContent=data?.error||error?.message||'Nie udało się usunąć dostępu.';return;}
+      if(notice)notice.textContent='Dostęp użytkownika został usunięty.';
       await loadAccessRequests();
     }
 
