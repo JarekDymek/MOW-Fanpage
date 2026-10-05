@@ -12,13 +12,13 @@ Wspólna wiedza MOW może być używana referencyjnie między projektami, ale **
 
 | Kod | Projekt logiczny | Repozytorium / repozytoria |
 |---|---|---|
-| GH2 | MOW | GH2 — Genialny Harmonogram 2 | `JarekDymek/Genialny-Harmonogram-2` + satelity Deploy/PWA |
-| GH3 | MOW | GH3 — Genialny Harmonogram 3 | `JarekDymek/GH3` |
+| GH2 | MOW — GH2 — Genialny Harmonogram 2 | `JarekDymek/Genialny-Harmonogram-2` + satelity Deploy/PWA |
+| GH3 | MOW — GH3 — Genialny Harmonogram 3 | `JarekDymek/GH3` |
 | AUDYTOR-INTERNAT | Audytor Harmonogramu Internatu MOW | `JarekDymek/Audytor-HM` |
-| MOW-PLAN | MOW | MÓJ PLAN | `JarekDymek/mow-moj-plan` |
-| MOW-ASYSTENT | MOW | ASYSTENT | `AsMOW` (produkcja), `AsMOW-Next` (rozwój), `Asystent-MOW-Open` (wariant publiczny/offline) |
-| MOW-FANPAGE | MOW | FANPAGE | `MOW-Fanpage` + `MOW-Fanpage-Zgody-Na-Wizerunek` jako moduł LAB |
-| MOW-GRY | MOW | GRY LOGICZNE | `JarekDymek/GryLogiczne2` |
+| MOW-PLAN | MOW — MÓJ PLAN | `JarekDymek/mow-moj-plan` |
+| MOW-ASYSTENT | MOW — ASYSTENT | `AsMOW` (produkcja), `AsMOW-Next` (rozwój), `Asystent-MOW-Open` (wariant publiczny/offline) |
+| MOW-FANPAGE | MOW — FANPAGE | `MOW-Fanpage` + `MOW-Fanpage-Zgody-Na-Wizerunek` jako moduł LAB |
+| MOW-GRY | MOW — GRY LOGICZNE | `JarekDymek/GryLogiczne2` |
 
 ## Zależności i relacje
 
