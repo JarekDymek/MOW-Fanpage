@@ -35,3 +35,7 @@ Docelowo jego zweryfikowane mechanizmy mają zostać zintegrowane z główną ap
 - Nie zapisuj sekretów, historii rozmów ani zdjęć wychowanków w Git.
 - Testuj na danych fikcyjnych.
 - Redakcja w ChatGPT i publikacja na Facebooku pozostają ręczne, jeśli aktualna architektura nie stanowi inaczej.
+
+## Wspólna baza wiedzy MOW
+
+Kanoniczny katalog relacji międzyprojektowych, statusów i nazewnictwa znajduje się w prywatnym repozytorium `JarekDymek/MOW-HUB`. Używaj go przy zadaniach przekrojowych. Dla zmian w tej aplikacji pierwszeństwo mają aktualny kod, lokalny `AGENTS.md` i dokumentacja tego repozytorium.
